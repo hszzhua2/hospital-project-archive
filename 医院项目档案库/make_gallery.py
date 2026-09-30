@@ -74,14 +74,21 @@ def render(projects, prefix, extra_note="", site=False):
             f'data-proj="{esc(p["项目"])}">'
             f'<img loading="lazy" src="{esc(urllib.parse.quote(site_url(f, "thumb") if site else prefix + f))}" alt="{esc(p["项目"])}"></a>'
             for f in imgs)
-        src = f'<a class="src" href="{esc(p["来源"])}" target="_blank" rel="noopener">原文链接 ↗</a>' \
-            if p["来源"] else ""
+        srcs = p.get("来源列表") or ([p["来源"]] if p["来源"] else [])
+        if len(srcs) > 1:
+            src = " ".join(
+                f'<a class="src" href="{esc(u)}" target="_blank" rel="noopener">原文{i+1} ↗</a>'
+                for i, u in enumerate(srcs))
+        elif srcs:
+            src = f'<a class="src" href="{esc(srcs[0])}" target="_blank" rel="noopener">原文链接 ↗</a>'
+        else:
+            src = ""
         cards.append(f"""
     <section class="card" data-name="{esc(p['项目'])} {esc(p['描述'])}">
       <header>
         <span class="num">{p['编号']}</span>
         <h2>{esc(p['项目'])}</h2>
-        <span class="cnt">{len(imgs)} 张</span>
+        <span class="cnt">{len(imgs)} 张{f' · {p["合并条目"]} 条推送合并' if p.get("合并条目", 1) > 1 else ''}</span>
       </header>
       {f'<p class="desc">{esc(p["描述"])}</p>' if p['描述'] else ''}
       <div class="grid">{thumbs}</div>

@@ -21,6 +21,43 @@ def safe(s, n=60):
     return s[:n] or "未命名"
 
 
+def hosp_key(s):
+    """医院识别 key:去掉'国家区域医疗中心'等前缀与分隔符,用于判断同一家医院"""
+    s = re.sub(r'国家区域医疗中心\s*[•·\-—]?\s*', '', s or "")
+    s = re.sub(r'[•·\s（）()【】\[\]、,，。]', '', s)
+    return s.strip()
+
+
+def merge_index(keys):
+    """
+    把新项目归并到已存在的同一家医院。
+    返回 {新meta下标: 主meta下标}
+    规则(保守,宁可不合并也不错并):
+      1) key 完全相同 -> 同一条目的多期推送
+      2) 短者是长者的前缀或后缀,且短者 >= 10 字 -> 同一家医院(如"XX医院"与"XX医院(新院区)")
+    注意:不能用 min/max(key=len) 取长短串——两者等长时返回同一对象,会自己包含自己
+    """
+    owner = {}      # 主 meta 下标 -> key
+    merged = {}     # 被合并的 meta 下标 -> 主 meta 下标
+    for mi, k in keys.items():
+        if not k:
+            continue
+        hit = None
+        for ok, okk in owner.items():
+            if k == okk:
+                hit = ok
+                break
+            a, b = (k, okk) if len(k) <= len(okk) else (okk, k)
+            if len(a) >= 10 and a != b and (b.startswith(a) or b.endswith(a)):
+                hit = ok
+                break
+        if hit is None:
+            owner[mi] = k
+        else:
+            merged[mi] = hit
+    return merged
+
+
 try:                       # 感知去重需要 PIL,缺失时退化为仅 md5 去重
     from PIL import Image
     HAS_PIL = True
@@ -128,13 +165,31 @@ def main():
                     if "mmbiz.qpic.cn" in u and u not in meta["imgs"]:
                         meta["imgs"].append(u)
 
+    # 同一家医院归并:后来的页面并到最早出现的那个项目文件夹
+    keys = {mi: hosp_key((m.get("title") or m.get("desc") or "").strip())
+            for mi, m in enumerate(metas, 1)}
+    merged = merge_index(keys)
+    if merged:
+        print(f"\n检测到同医院条目 {len(merged)} 个,将合并到已有项目")
+
     for mi, meta in enumerate(metas, 1):
         desc = (meta.get("desc") or "").strip()
         title = (meta.get("title") or "").strip()
         proj = title or desc or "未命名项目"
-        folder = IMG_ROOT / f"{mi:02d}_{safe(proj, 50)}"
-        folder.mkdir(exist_ok=True)
-        print(f"[{mi}] {proj[:60]} | 图片 {len(meta.get('imgs', []))} 张")
+        main_i = merged.get(mi, mi)
+        if main_i != mi:
+            main_meta = metas[main_i - 1]
+            main_proj = (main_meta.get("title") or main_meta.get("desc") or "未命名项目").strip()
+            folder = IMG_ROOT / f"{main_i:02d}_{safe(main_proj, 50)}"
+            folder.mkdir(exist_ok=True)
+            start = len([p for p in folder.glob("*")
+                         if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif")])
+            print(f"[{mi}] {proj[:50]} → 合并进 {folder.name} (已有 {start} 张)")
+        else:
+            folder = IMG_ROOT / f"{mi:02d}_{safe(proj, 50)}"
+            folder.mkdir(exist_ok=True)
+            start = 0
+            print(f"[{mi}] {proj[:60]} | 图片 {len(meta.get('imgs', []))} 张")
         ok = 0
         for k, u in enumerate(meta.get("imgs", []), 1):
             tmp = folder / "_tmp"
@@ -150,10 +205,12 @@ def main():
                 tmp.unlink()
                 continue
             ext = ".png" if "wx_fmt=png" in u else (".gif" if "wx_fmt=gif" in u else ".jpg")
-            dest = folder / f"{k:02d}{ext}"
-            n = 1
-            while dest.exists():
-                dest = folder / f"{k:02d}_{n}{ext}"
+            n = 0
+            while True:
+                dest = folder / (f"{start + ok + 1:03d}{ext}" if n == 0
+                                 else f"{start + ok + 1:03d}_{n}{ext}")
+                if not dest.exists():
+                    break
                 n += 1
             tmp.rename(dest)
             seen_md5[md5] = str(dest)
@@ -165,8 +222,12 @@ def main():
         print(f"    新增 {ok} 张 -> {folder.name}")
 
     # 保存项目级元数据,供可视化档案库使用
+    # 同一家医院合并后:图片汇总,描述与来源链接去重后保留多条
     projects = []
     for mi, meta in enumerate(metas, 1):
+        if mi in merged:          # 被合并掉的条目不单独出卡片
+            continue
+        group = [mi] + [m for m, main in merged.items() if main == mi]
         proj = (meta.get("title") or meta.get("desc") or "未命名项目").strip()
         folder = IMG_ROOT / f"{mi:02d}_{safe(proj, 50)}"
         if not folder.exists():
@@ -174,11 +235,22 @@ def main():
         files = [p for p in sorted(folder.glob("*")) if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif")]
         if not files:
             continue
+        descs, srcs = [], []
+        for g in group:
+            m = metas[g - 1]
+            d = (m.get("desc") or "").strip()
+            if d and d not in descs:
+                descs.append(d)
+            u = (m.get("url") or "").strip()
+            if u and u not in srcs:
+                srcs.append(u)
         projects.append({
             "编号": f"{mi:02d}",
             "项目": proj,
-            "描述": (meta.get("desc") or "").strip(),
-            "来源": meta.get("url", ""),
+            "描述": " ｜ ".join(descs)[:400],
+            "来源": srcs[0] if srcs else "",
+            "来源列表": srcs,
+            "合并条目": len(group),
             "文件夹": folder.name,
             "图片": [str(p.relative_to(ROOT)).replace("\\", "/") for p in files],
         })
