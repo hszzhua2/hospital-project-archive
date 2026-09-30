@@ -13,6 +13,16 @@ DOCS = ROOT / "docs"
 PJ = ARCH / "projects.json"
 REPO = "https://github.com/hszzhua2/hospital-project-archive"
 projects = json.load(open(PJ, encoding="utf-8")) if PJ.exists() else []
+# projects.json 由 build_archive 在去重之前生成,可能含已被 dedupe 移走的图
+# 渲染前剔除磁盘上不存在的文件,避免档案库/站点出现裂图
+_dropped = 0
+for p in projects:
+    alive = [f for f in p["图片"] if (ARCH / f).exists()]
+    _dropped += len(p["图片"]) - len(alive)
+    p["图片"] = alive
+projects = [p for p in projects if p["图片"]]
+if _dropped:
+    print(f"剔除失效引用 {_dropped} 条(已被去重移走)")
 NOW = time.strftime("%Y-%m-%d %H:%M")
 
 # ---------- CSV 索引 ----------
