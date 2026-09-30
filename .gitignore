@@ -1,0 +1,19 @@
+# 抓取的原始页面（体积大、可再生）
+医院项目档案库/_pages/
+# 重复图片（已剔除的 CDN 副本）
+医院项目档案库/_dupes/
+# 临时目录
+wuzhaohui_archive/
+*.tmp
+_tmp
+
+# 工作区私有数据（记忆/会话，不入库）
+.workbuddy/
+# 同步脚本自身的运行日志
+.sync/*.log
+.sync/*.pid
+
+# Python
+__pycache__/
+*.pyc
+.venv/
