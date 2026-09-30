@@ -126,6 +126,20 @@ def ahead():
         return 0
 
 
+def same_tree_as_remote():
+    """历史分叉但内容一致时返回 True(避免无意义的失败推送)"""
+    try:
+        r = subprocess.run(["gh", "api", "repos/hszzhua2/hospital-project-archive/commits/master",
+                            "--jq", ".commit.tree.sha"],
+                           cwd=ROOT, capture_output=True, text=True,
+                           encoding="utf-8", timeout=120, env=ENV)
+        remote_tree = (r.stdout or "").strip()
+        code, local_tree = run(["rev-parse", "HEAD^{tree}"])
+        return bool(remote_tree) and code == 0 and local_tree.strip() == remote_tree
+    except Exception:
+        return False
+
+
 def sync(msg=None, dry=False, pull=True, retries=3):
     items, _ = portrait()
     pending = ahead()
@@ -133,6 +147,9 @@ def sync(msg=None, dry=False, pull=True, retries=3):
         log("无变更，跳过")
         return 0
     if not items:
+        if pending and same_tree_as_remote():
+            log(f"内容与远端一致(历史分叉 {pending} 个提交)，无需推送")
+            return 0
         log(f"本地领先远端 {pending} 个提交，直接推送")
     summary, imgs = summarize(items)
     message = msg or f"自动同步 {datetime.datetime.now():%Y-%m-%d %H:%M} · {summary}"
