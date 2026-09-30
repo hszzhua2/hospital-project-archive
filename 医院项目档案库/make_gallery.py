@@ -126,7 +126,7 @@ document.addEventListener('keydown',e=>{{if(e.key==='Escape'){{lb.classList.remo
 # ---------- 2) GitHub Pages 站点 ----------
 DOCS.mkdir(exist_ok=True)
 (DOCS / ".nojekyll").write_text("", encoding="utf-8")
-copied = 0
+copied = kept = 0
 for p in projects:
     for f in p["图片"]:
         src_f = ARCH / f
@@ -137,8 +137,11 @@ for p in projects:
         if (not dst.exists()) or dst.stat().st_size != src_f.stat().st_size:
             shutil.copy2(src_f, dst)
             copied += 1
+        else:
+            kept += 1
 (DOCS / "index.html").write_text(
     render(projects, "", " · 托管于 GitHub Pages"), encoding="utf-8")
 
 print(f"本地: 档案库.html ({len(projects)} 项目 / {len(rows)} 图)")
-print(f"站点: docs/index.html,新复制图片 {copied} 张")
+total = sum(len(p["图片"]) for p in projects)
+print(f"站点: docs/index.html,共 {total} 张(新复制 {copied} / 已存在 {kept})")
