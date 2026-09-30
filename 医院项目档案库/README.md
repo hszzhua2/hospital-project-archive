@@ -36,8 +36,9 @@
 
 工作区任一文件变化后，后台监听会在文件稳定 8 秒后自动提交并推送，无需手动操作。
 
-- 手动同步一次：`.sync/sync.py -m "说明"`
+- 手动同步一次：双击 `.sync/同步一次.bat`，或 `python .sync/sync.py -m "说明"`
 - 看将要提交什么：`.sync/sync.py --dry-run`
+- 自检（git / 远端 / 凭据是否可用）：`.sync/sync.py --check`
 - 查看日志：`.sync/sync.log`
 - 后台监听：登录即启动（启动项 `HospitalArchiveGitSync`），默认 15 秒轮询 / 8 秒稳定等待
 - 停止监听：任务管理器结束 `pythonw.exe`

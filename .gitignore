@@ -9,9 +9,11 @@ _tmp
 
 # 工作区私有数据（记忆/会话，不入库）
 .workbuddy/
-# 同步脚本自身的运行日志
+# 同步脚本自身的运行日志与临时文件
 .sync/*.log
 .sync/*.pid
+.sync/_*.py
+.sync/_*.txt
 
 # Python
 __pycache__/
