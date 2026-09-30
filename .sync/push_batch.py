@@ -26,14 +26,16 @@ def run(args, timeout=1800, quiet=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-m", default="批量更新")
-    ap.add_argument("--batch", type=int, default=25, help="每批项目目录数")
+    ap.add_argument("--batch", type=int, default=15, help="每批项目目录数")
+    ap.add_argument("--no-reset", action="store_true", help="不撤销上一次提交(续推剩余文件)")
     args = ap.parse_args()
 
     run(["config", "http.postBuffer", "524288000"])
-    # 撤销上一次未推送成功的提交,保留工作区内容
     code, out = run(["log", "--oneline", "-1"])
     head_msg = out.strip()
-    run(["reset", "--mixed", "HEAD~1"])
+    if not args.no_reset:
+        # 撤销上一次未推送成功的提交,保留工作区内容
+        run(["reset", "--mixed", "HEAD~1"])
 
     code, out = run(["status", "--porcelain"])
     pending = [l[3:].strip().strip('"') for l in out.splitlines() if l.strip()]
@@ -61,9 +63,14 @@ def main():
     for bi, (label, files) in enumerate(batches, 1):
         if not files:
             continue
-        idx = ROOT / ".sync" / f"_batch_{bi}.lst"
-        idx.write_text("\n".join(files), encoding="utf-8")
-        run(["add", "-A", "--", *files])
+        # 用 stdin 传路径(不落临时文件,也不受命令行长度限制)
+        r = subprocess.run([GIT, "-c", "core.quotepath=false", "add", "-A",
+                            "--pathspec-from-file=-"], cwd=ROOT,
+                           input="\n".join(files), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=600)
+        if r.returncode != 0:
+            print(f"  批次 {bi} add 失败: {((r.stdout or '')+(r.stderr or ''))[-200:]}")
+            return 1
         code, out = run(["commit", "-m", f"{args.m} [{bi}/{len(batches)}] {label}"])
         if code != 0 and "nothing to commit" in out:
             print(f"  批次 {bi} 无变更,跳过")
@@ -78,7 +85,6 @@ def main():
         else:
             print(f"  批次 {bi} 三次失败,中止剩余批次")
             return 1
-        idx.unlink(missing_ok=True)
     print("全部分批推送完成")
     return 0
 
