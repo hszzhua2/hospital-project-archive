@@ -163,6 +163,15 @@ def sync(msg=None, dry=False, pull=True, retries=3):
             return 0
         log(f"推送失败({i+1}/{retries}): {out.strip()[:200]}")
         time.sleep(5 * (i + 1))
+
+    # 兜底:直连 github.com 被拦截时,改走 api.github.com 建树提交
+    try:
+        import push_api
+        log("git push 连续失败，改用 API 兜底通道")
+        if push_api.main() == 0:
+            return 0
+    except Exception as e:
+        log(f"API 兜底异常: {e}")
     return 1
 
 
