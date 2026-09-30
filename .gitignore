@@ -12,6 +12,7 @@ _tmp
 # 同步脚本自身的运行日志与临时文件
 .sync/*.log
 .sync/*.pid
+.sync/.lock
 .sync/_*.py
 .sync/_*.txt
 
