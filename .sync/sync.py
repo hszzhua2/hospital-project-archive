@@ -115,6 +115,33 @@ def summarize(items):
     return f"{tops}: " + "，".join(parts) if parts else "更新", imgs
 
 
+def pid_alive(pid):
+    """Windows:用 tasklist 判断进程是否存活(避免 os.kill 的副作用)"""
+    try:
+        r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, env=ENV)
+        return str(pid) in (r.stdout or "")
+    except Exception:
+        return True   # 查不到时保守认为存活
+
+
+def lock_alive():
+    """锁文件是否由仍在运行的进程持有"""
+    try:
+        pid = int((LOCK.read_text(encoding="utf-8") or "0").strip())
+    except Exception:
+        return False
+    if pid and pid_alive(pid):
+        return True
+    try:            # 陈旧锁,清理
+        LOCK.unlink()
+        log(f"清理陈旧锁(pid {pid} 已退出)")
+    except Exception:
+        pass
+    return False
+
+
 def ahead():
     """本地领先远端的提交数"""
     code, out = run(["rev-list", "--count", "@{u}..HEAD"])
@@ -205,7 +232,7 @@ def main():
         log(("自检通过 · 远端 " + info) if ok else ("自检失败 · " + info))
         return 0 if ok else 1
 
-    if LOCK.exists():
+    if LOCK.exists() and lock_alive():
         try:
             age = time.time() - LOCK.stat().st_mtime
             if age < 900:
