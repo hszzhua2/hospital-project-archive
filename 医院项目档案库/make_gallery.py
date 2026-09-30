@@ -5,7 +5,12 @@
   2) docs/index.html            GitHub Pages 站点(图片复制到 docs/images/,不走 LFS)
 同时输出 档案库.csv 索引
 """
-import json, csv, pathlib, html, time, shutil, urllib.parse
+import json, csv, pathlib, html, time, urllib.parse
+try:
+    from PIL import Image
+    HAS_PIL = True
+except Exception:
+    HAS_PIL = False
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ARCH = ROOT / "医院项目档案库"
@@ -50,17 +55,24 @@ def esc(s):
     return html.escape(s or "")
 
 
-def render(projects, prefix, extra_note=""):
-    """prefix: 图片路径前缀,如 'images/'(相对页面所在目录)"""
+def site_url(f, kind="full"):
+    """源相对路径 images/xx/01.png -> 站点路径 images/xx/01.jpg 或 thumbs/xx/01.jpg"""
+    sub = pathlib.Path(f).relative_to("images")
+    base = str(sub.with_suffix(".jpg")).replace("\\", "/")
+    return ("images/" + base if kind == "full" else "thumbs/" + base)
+
+
+def render(projects, prefix, extra_note="", site=False):
+    """prefix: 图片路径前缀;site=True 时使用站点压缩版(缩略图+大图)"""
     cards = []
     for p in projects:
         imgs = [f for f in p["图片"] if (ARCH / f).exists()]
         if not imgs:
             continue
         thumbs = "".join(
-            f'<a class="thumb" href="{esc(urllib.parse.quote(prefix + f))}" '
+            f'<a class="thumb" href="{esc(urllib.parse.quote(site_url(f) if site else prefix + f))}" '
             f'data-proj="{esc(p["项目"])}">'
-            f'<img loading="lazy" src="{esc(urllib.parse.quote(prefix + f))}" alt="{esc(p["项目"])}"></a>'
+            f'<img loading="lazy" src="{esc(urllib.parse.quote(site_url(f, "thumb") if site else prefix + f))}" alt="{esc(p["项目"])}"></a>'
             for f in imgs)
         src = f'<a class="src" href="{esc(p["来源"])}" target="_blank" rel="noopener">原文链接 ↗</a>' \
             if p["来源"] else ""
@@ -134,24 +146,52 @@ document.addEventListener('keydown',e=>{{if(e.key==='Escape'){{lb.classList.remo
 (ARCH / "档案库.html").write_text(render(projects, ""), encoding="utf-8")
 
 # ---------- 2) GitHub Pages 站点 ----------
+# 站点不发布原图(200MB+ 会让页面与仓库都失控):生成网页优化版
+#   大图  docs/images/...   最长边 <= 1200, JPEG q80
+#   缩略图 docs/thumbs/...   最长边 <= 420,  JPEG q72
+# 原图仍完整保存在 医院项目档案库/images/(Git LFS)
+FULL_MAX, THUMB_MAX, Q_FULL, Q_THUMB = 1200, 420, 80, 72
+
+
+def make_web(src_f, dst, max_side, quality):
+    if not HAS_PIL:
+        return False
+    im = Image.open(src_f)
+    im = im.convert("RGB") if im.mode in ("RGBA", "P", "LA") else im
+    if max(im.size) > max_side:
+        r = max_side / max(im.size)
+        im = im.resize((max(1, round(im.size[0] * r)), max(1, round(im.size[1] * r))),
+                       Image.LANCZOS)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    im.save(dst, "JPEG", quality=quality, optimize=True, progressive=True)
+    return True
+
+
 DOCS.mkdir(exist_ok=True)
 (DOCS / ".nojekyll").write_text("", encoding="utf-8")
-copied = kept = 0
+new_full = kept_full = new_thumb = kept_thumb = 0
 for p in projects:
     for f in p["图片"]:
         src_f = ARCH / f
         if not src_f.exists():
             continue
-        dst = DOCS / f
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if (not dst.exists()) or dst.stat().st_size != src_f.stat().st_size:
-            shutil.copy2(src_f, dst)
-            copied += 1
+        sub = pathlib.Path(f).relative_to("images")
+        dst_full = DOCS / "images" / sub.with_suffix(".jpg")
+        dst_thumb = DOCS / "thumbs" / sub.with_suffix(".jpg")
+        if (not dst_full.exists()) or dst_full.stat().st_mtime < src_f.stat().st_mtime:
+            if make_web(src_f, dst_full, FULL_MAX, Q_FULL):
+                new_full += 1
         else:
-            kept += 1
+            kept_full += 1
+        if (not dst_thumb.exists()) or dst_thumb.stat().st_mtime < src_f.stat().st_mtime:
+            if make_web(src_f, dst_thumb, THUMB_MAX, Q_THUMB):
+                new_thumb += 1
+        else:
+            kept_thumb += 1
 (DOCS / "index.html").write_text(
-    render(projects, "", " · 托管于 GitHub Pages"), encoding="utf-8")
+    render(projects, "", " · 托管于 GitHub Pages(网页优化版)", site=True), encoding="utf-8")
 
-print(f"本地: 档案库.html ({len(projects)} 项目 / {len(rows)} 图)")
+print(f"本地: 档案库.html ({len(projects)} 项目 / {len(rows)} 图,原图)")
 total = sum(len(p["图片"]) for p in projects)
-print(f"站点: docs/index.html,共 {total} 张(新复制 {copied} / 已存在 {kept})")
+print(f"站点: docs/index.html,共 {total} 张 "
+      f"(大图 新生成 {new_full} / 已有 {kept_full};缩略图 新生成 {new_thumb} / 已有 {kept_thumb})")
