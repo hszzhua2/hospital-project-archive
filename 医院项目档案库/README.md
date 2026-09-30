@@ -31,6 +31,15 @@
 
 说明：`build_archive.py` 按 md5 跳过已下载图片，重复执行安全；`dedupe.py` 用感知哈希剔除同一张图的 sz_/mmbiz 双版本。
 
+## 在线分享（GitHub Pages）
+**分享链接：https://hszzhua2.github.io/hospital-project-archive/**
+
+手机/电脑浏览器直接打开，无需登录，适合发给同行看。站点由 `docs/` 目录发布，
+图片是**真实文件副本**（不走 LFS，因为 GitHub Pages 不解析 LFS 指针）。
+
+新增项目后，跑完归档流程再执行 `make_gallery.py`，它会同时更新本地 `档案库.html` 和 `docs/index.html`，
+随后自动同步流会把站点推上线（约 1 分钟生效）。
+
 ## GitHub 自动同步
 仓库：https://github.com/hszzhua2/hospital-project-archive （公开，图片走 Git LFS）
 

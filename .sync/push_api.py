@@ -108,7 +108,12 @@ def main(message=None):
 
     # 本地对齐远端(内容一致,仅 SHA 不同)
     run(["update-ref", f"refs/remotes/origin/{BRANCH}", commit["sha"]])
-    log("远端引用已更新到本地跟踪分支")
+    code, _ = run(["fetch", "origin", BRANCH], timeout=180)
+    if code == 0:
+        run(["reset", "--soft", commit["sha"]])
+        log("本地 HEAD 已对齐远端")
+    else:
+        log("远端引用已更新(fetch 不可用,本地历史保持独立,后续靠 API 通道同步)")
     return 0
 
 
