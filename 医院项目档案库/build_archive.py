@@ -38,8 +38,9 @@ def dhash(p, size=8):
     return int("".join("1" if b else "0" for b in bits), 2)
 
 
-def load_blacklist():
-    f = ROOT / "_dupes" / "blacklist.json"
+def load_seen():
+    """已处理过(保留或已去重)的图的感知签名,按项目隔离"""
+    f = ROOT / "_dupes" / "seen.json"
     if not HAS_PIL or not f.exists():
         return []
     try:
@@ -48,7 +49,8 @@ def load_blacklist():
         return []
 
 
-def is_blacklisted(p):
+def is_duplicate(p, proj):
+    """新下载的图是否与本项目已处理过的某张图是同一张(不同 CDN 版本)"""
     if not HAS_PIL:
         return False
     try:
@@ -56,14 +58,16 @@ def is_blacklisted(p):
         w, ht = Image.open(p).size
     except Exception:
         return False
-    for b in BLACKLIST:
+    for b in SEEN:
+        if b.get("proj") != proj:
+            continue
         if abs(b["w"] - w) < 20 and abs(b["h"] - ht) < 20 and \
            bin(h ^ b["dhash"]).count("1") <= 6:
             return True
     return False
 
 
-BLACKLIST = load_blacklist()
+SEEN = load_seen()
 
 
 def dl(url, dest):
@@ -142,7 +146,7 @@ def main():
                 tmp.unlink()
                 continue
             seen_md5[md5] = str(tmp)
-            if is_blacklisted(tmp):
+            if is_duplicate(tmp, folder.name):
                 tmp.unlink()
                 continue
             ext = ".png" if "wx_fmt=png" in u else (".gif" if "wx_fmt=gif" in u else ".jpg")
