@@ -2,6 +2,12 @@
 
 来源：微信公众号「吴昭辉医师」图集（国家区域医疗中心项目合集）
 
+## 已入库项目
+| 编号 | 项目 | 图片 | 备注 |
+|---|---|---|---|
+| 01 | 国家区域医疗中心·广州市妇女儿童医疗中心柳州医院 | 6 | 柳州市妇幼保健院（市儿童医院、市妇产医院）柳东院区 |
+| 02 | 国家区域医疗中心·浙医二院嘉兴医院 | 17 | 嘉善县第一人民医院新院区，效果图与建设实景 |
+
 ## 目录结构
 ```
 医院项目档案库/
@@ -10,12 +16,13 @@
 ├─ images/          按项目分文件夹存放的原图
 ├─ _dupes/          同一张图的重复 CDN 版本（已剔除，可删）
 ├─ _pages/          抓取的页面源码与元数据
-├─ links.txt        待抓取的微信图片消息链接（每行一条）
+├─ links.txt        待抓取的微信链接（每行一条，图集页 / 普通图文均可）
 └─ *.py / *.js      抓取与归档脚本
 ```
 
 ## 加新项目的流程（三步）
-1. 微信里打开该图集图片 → 右上角「…」→ 复制链接，粘贴到 `links.txt`（每行一条，可一次贴很多条）
+1. 微信里打开该图集或图文 → 右上角「…」→ 复制链接，粘贴到 `links.txt`（每行一条，可一次贴很多条）
+   - 支持两类链接：**图集页**（`t=pages/image_detail`）与**普通图文**（`mp.weixin.qq.com/s/xxx`），脚本会自动识别
 2. 抓取页面：
    ```bash
    NODE_PATH=C:/Users/18811/.workbuddy/binaries/node/workspace/node_modules \
@@ -29,7 +36,10 @@
    C:/Users/18811/.workbuddy/binaries/python/versions/3.13.12/python.exe make_gallery.py
    ```
 
-说明：`build_archive.py` 按 md5 跳过已下载图片，重复执行安全；`dedupe.py` 用感知哈希剔除同一张图的 sz_/mmbiz 双版本。
+说明：
+- `build_archive.py` 按 md5 跳过已下载图片，重复执行安全
+- `dedupe.py` 用感知哈希剔除同一张图的 sz_/mmbiz 双版本，并把签名写入 `_dupes/blacklist.json`
+- 二者配合形成**幂等闭环**：去重移走的图下次不会再被下载回来（build 阶段即按黑名单拦截）
 
 ## 在线分享（GitHub Pages）
 **分享链接：https://hszzhua2.github.io/hospital-project-archive/**
