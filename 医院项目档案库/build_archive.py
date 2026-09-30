@@ -21,6 +21,51 @@ def safe(s, n=60):
     return s[:n] or "未命名"
 
 
+try:                       # 感知去重需要 PIL,缺失时退化为仅 md5 去重
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+
+def dhash(p, size=8):
+    im = Image.open(p).convert("L").resize((size + 1, size), Image.LANCZOS)
+    px = list(im.getdata())
+    bits = []
+    for r in range(size):
+        for c in range(size):
+            bits.append(px[r * (size + 1) + c] < px[r * (size + 1) + c + 1])
+    return int("".join("1" if b else "0" for b in bits), 2)
+
+
+def load_blacklist():
+    f = ROOT / "_dupes" / "blacklist.json"
+    if not HAS_PIL or not f.exists():
+        return []
+    try:
+        return json.load(open(f, encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def is_blacklisted(p):
+    if not HAS_PIL:
+        return False
+    try:
+        h = dhash(p)
+        w, ht = Image.open(p).size
+    except Exception:
+        return False
+    for b in BLACKLIST:
+        if abs(b["w"] - w) < 20 and abs(b["h"] - ht) < 20 and \
+           bin(h ^ b["dhash"]).count("1") <= 6:
+            return True
+    return False
+
+
+BLACKLIST = load_blacklist()
+
+
 def dl(url, dest):
     for u in (url, re.sub(r'(mmbiz\.(?:qpic|qlogo)\.cn/[^?]+?)/(\d+)(\?|$)', r'\1/0\3', url)):
         subprocess.run(["curl", "-sL", "--max-time", "90", "-A", UA,
@@ -59,9 +104,13 @@ def main():
         metas.append({"url": "", "title": title, "desc": desc, "imgs": imgs, "ts": h.stat().st_mtime})
 
     rows, seen_md5 = [], {}
-    for p in IMG_ROOT.rglob("*"):
-        if p.is_file():
-            seen_md5.setdefault(hashlib.md5(p.read_bytes()).hexdigest(), str(p))
+    # 已入库图 + 已判重复的图(_dupes)都参与精确去重,避免重复图被反复下载回来
+    for base in (IMG_ROOT, ROOT / "_dupes"):
+        if not base.exists():
+            continue
+        for p in base.rglob("*"):
+            if p.is_file():
+                seen_md5.setdefault(hashlib.md5(p.read_bytes()).hexdigest(), str(p))
 
     # JSON 记录的图片可能不全(懒加载),用同批 HTML 正则补全
     for meta in metas:
@@ -90,6 +139,10 @@ def main():
                 continue
             md5 = hashlib.md5(tmp.read_bytes()).hexdigest()
             if md5 in seen_md5:
+                tmp.unlink()
+                continue
+            seen_md5[md5] = str(tmp)
+            if is_blacklisted(tmp):
                 tmp.unlink()
                 continue
             ext = ".png" if "wx_fmt=png" in u else (".gif" if "wx_fmt=gif" in u else ".jpg")

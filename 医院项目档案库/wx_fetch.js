@@ -54,14 +54,36 @@ function isBlocked(url, html) {
     const ts = Date.now();
     const file = path.join(OUT, 'page_' + ts + '.html');
     fs.writeFileSync(file, html, 'utf8');
-    const title = await page.title().catch(() => '');
+    let title = await page.title().catch(() => '');
+    const aTitle = await page.evaluate(() => {
+      const el = document.querySelector('#activity-name');
+      return el ? el.innerText.trim() : '';
+    }).catch(() => '');
+    if (aTitle) title = aTitle;
+    title = title.replace(/\s*[-|]\s*微信公众号.*$/, '').trim();
     const desc = await page.evaluate(() => window.desc || '').catch(() => '');
-    const imgs = await page.evaluate(() => {
+    // 图集页: cgiDataNew.picture_page_info_list
+    let imgs = await page.evaluate(() => {
       const l = (window.cgiDataNew && window.cgiDataNew.picture_page_info_list) || [];
       return l.map(x => x.cdn_url).filter(u => u && /mmbiz\.qpic\.cn/.test(u));
     }).catch(() => []);
+    let kind = 'album';
+    // 普通图文: #js_content 内 img[data-src]
+    if (!imgs.length) {
+      imgs = await page.evaluate(() => {
+        const box = document.querySelector('#js_content, .rich_media_content, #img-content');
+        if (!box) return [];
+        const out = [];
+        box.querySelectorAll('img').forEach(im => {
+          const u = im.getAttribute('data-src') || im.getAttribute('src') || '';
+          if (/mmbiz\.qpic\.cn/.test(u)) out.push(u.startsWith('//') ? 'https:' + u : u);
+        });
+        return out;
+      }).catch(() => []);
+      if (imgs.length) kind = 'article';
+    }
     fs.writeFileSync(path.join(OUT, 'page_' + ts + '.json'),
-      JSON.stringify({ url, title, desc, imgs, ts }, null, 2), 'utf8');
+      JSON.stringify({ url, title, desc, imgs, ts, kind }, null, 2), 'utf8');
     console.log('  HTML: ' + file);
     console.log('  TITLE: ' + title);
     console.log('  DESC: ' + desc.slice(0, 100));
