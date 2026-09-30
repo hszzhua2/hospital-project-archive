@@ -8,12 +8,36 @@
     python .sync/sync.py -m "手动说明"    # 自定义信息
     python .sync/sync.py --dry-run       # 只看将要提交什么
 """
-import argparse, os, pathlib, subprocess, sys, time, datetime
+import argparse, os, pathlib, subprocess, sys, time, datetime, shutil
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOG = ROOT / ".sync" / "sync.log"
 LOCK = ROOT / ".sync" / ".lock"
-GIT = ["git"]
+
+# 后台进程常常拿不到用户 PATH,这里硬解析 git 可执行文件
+_GIT_CANDIDATES = [
+    r"C:\Users\18811\.workbuddy\binaries\PortableGit\versions\1.2.0\mingw64\bin\git.exe",
+    r"C:\Program Files\Git\cmd\git.exe",
+    r"C:\Program Files\Git\bin\git.exe",
+]
+
+
+def _find_git():
+    g = shutil.which("git")
+    if g:
+        return g
+    for p in _GIT_CANDIDATES:
+        if pathlib.Path(p).exists():
+            return p
+    return "git"
+
+
+GIT_EXE = _find_git()
+GIT = [GIT_EXE]
+ENV = os.environ.copy()
+ENV["PATH"] = str(pathlib.Path(GIT_EXE).parent) + os.pathsep + ENV.get("PATH", "")
+for _k in ("GIT_TERMINAL_PROMPT",):
+    ENV[_k] = "0"
 
 
 def log(msg):
@@ -28,8 +52,23 @@ def log(msg):
 
 def run(args, timeout=600):
     r = subprocess.run(GIT + args, cwd=ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout)
+                       encoding="utf-8", errors="replace", timeout=timeout, env=ENV)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+def verify():
+    """自检:git 可用 / 有远端 / 凭据可推送"""
+    code, out = run(["--version"])
+    if code != 0:
+        return False, f"git 不可用: {out.strip()[:120]}"
+    code, out = run(["remote", "get-url", "origin"])
+    if code != 0:
+        return False, "未配置远端 origin"
+    remote = out.strip()
+    code, out = run(["ls-remote", "--heads", "origin"], timeout=120)
+    if code != 0:
+        return False, f"无法访问远端({remote}),请检查 GitHub 登录: {out.strip()[:160]}"
+    return True, remote
 
 
 def portrait():
@@ -76,11 +115,25 @@ def summarize(items):
     return f"{tops}: " + "，".join(parts) if parts else "更新", imgs
 
 
+def ahead():
+    """本地领先远端的提交数"""
+    code, out = run(["rev-list", "--count", "@{u}..HEAD"])
+    if code != 0:
+        return 0
+    try:
+        return int(out.strip().splitlines()[0])
+    except Exception:
+        return 0
+
+
 def sync(msg=None, dry=False, pull=True, retries=3):
     items, _ = portrait()
-    if not items:
+    pending = ahead()
+    if not items and pending == 0:
         log("无变更，跳过")
         return 0
+    if not items:
+        log(f"本地领先远端 {pending} 个提交，直接推送")
     summary, imgs = summarize(items)
     message = msg or f"自动同步 {datetime.datetime.now():%Y-%m-%d %H:%M} · {summary}"
     if dry:
@@ -89,12 +142,13 @@ def sync(msg=None, dry=False, pull=True, retries=3):
             log(f"    {xy} {p}")
         return 0
 
-    run(["add", "-A"])
-    code, out = run(["commit", "-m", message])
-    if code != 0 and "nothing to commit" in out:
-        log("无变更，跳过")
-        return 0
-    log(f"已提交: {message} ({len(items)} 项)")
+    if items:
+        run(["add", "-A"])
+        code, out = run(["commit", "-m", message])
+        if code != 0 and "nothing to commit" not in out:
+            log(f"提交失败: {out.strip()[:200]}")
+            return 1
+        log(f"已提交: {message} ({len(items)} 项)")
 
     if pull:
         code, out = run(["pull", "--rebase", "--autostash", "--no-tags"])
@@ -117,7 +171,13 @@ def main():
     ap.add_argument("-m", "--message", default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-pull", action="store_true")
+    ap.add_argument("--check", action="store_true", help="自检 git/远端/凭据")
     args = ap.parse_args()
+
+    if args.check:
+        ok, info = verify()
+        log(("自检通过 · 远端 " + info) if ok else ("自检失败 · " + info))
+        return 0 if ok else 1
 
     if LOCK.exists():
         try:

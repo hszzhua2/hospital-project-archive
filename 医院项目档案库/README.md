@@ -30,3 +30,16 @@
    ```
 
 说明：`build_archive.py` 按 md5 跳过已下载图片，重复执行安全；`dedupe.py` 用感知哈希剔除同一张图的 sz_/mmbiz 双版本。
+
+## GitHub 自动同步
+仓库：https://github.com/hszzhua2/hospital-project-archive （公开，图片走 Git LFS）
+
+工作区任一文件变化后，后台监听会在文件稳定 8 秒后自动提交并推送，无需手动操作。
+
+- 手动同步一次：`.sync/sync.py -m "说明"`
+- 看将要提交什么：`.sync/sync.py --dry-run`
+- 查看日志：`.sync/sync.log`
+- 后台监听：登录即启动（启动项 `HospitalArchiveGitSync`），默认 15 秒轮询 / 8 秒稳定等待
+- 停止监听：任务管理器结束 `pythonw.exe`
+
+排除在仓库外：`_pages/`（大体积页面源码）、`_dupes/`（重复图）、`.workbuddy/`（会话记忆）。

@@ -7,14 +7,15 @@ import argparse, hashlib, pathlib, subprocess, sys, time, datetime, os
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from sync import sync, log, run, portrait  # noqa: E402
+from sync import sync, log, run, portrait, ahead, verify  # noqa: E402
 
 
 def snapshot():
-    """工作区状态指纹:路径 + 大小 + 修改时间"""
+    """工作区状态指纹:路径 + 大小 + 修改时间;无文件变更但领先远端时也视为待同步"""
     items, _ = portrait()
     if not items:
-        return None, []
+        n = ahead()
+        return (f"AHEAD:{n}", []) if n > 0 else (None, [])
     sig = []
     for xy, p in items:
         fp = ROOT / p
@@ -33,10 +34,16 @@ def main():
     ap.add_argument("--once", action="store_true", help="只跑一轮")
     args = ap.parse_args()
 
+    ok, info = verify()
     log(f"监听启动 | 间隔 {args.interval}s | 稳定等待 {args.debounce}s | 目录 {ROOT}")
+    log(("自检通过 · 远端 " + info) if ok else ("自检失败 · " + info))
     last_sig, stable_since = None, None
+    last_beat = time.time()
     while True:
         try:
+            if time.time() - last_beat >= 300:      # 5 分钟心跳,便于确认进程存活
+                log("心跳 · 监听中")
+                last_beat = time.time()
             sig, items = snapshot()
             if sig is None:
                 stable_since = None
