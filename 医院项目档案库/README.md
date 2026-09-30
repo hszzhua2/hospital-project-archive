@@ -41,6 +41,8 @@
 - 自检（git / 远端 / 凭据是否可用）：`.sync/sync.py --check`
 - 查看日志：`.sync/sync.log`
 - 后台监听：登录即启动（启动项 `HospitalArchiveGitSync`），默认 15 秒轮询 / 8 秒稳定等待
+- 立即启动监听：双击 `.sync/start_watch.bat`（窗口会自动最小化，进程名 `pythonw.exe`）
 - 停止监听：任务管理器结束 `pythonw.exe`
+- 监听日志每 5 分钟写一条「心跳」，可据此判断进程是否还活着
 
 排除在仓库外：`_pages/`（大体积页面源码）、`_dupes/`（重复图）、`.workbuddy/`（会话记忆）。
